@@ -1,11 +1,12 @@
 # ---------------------------------------
-# Velora AI - FINAL POLISHED VERSION
+# Velora AI - FINAL STABLE VERSION
 # ---------------------------------------
 
 import streamlit as st
 import joblib
 import re
 import pandas as pd
+import numpy as np
 
 # -----------------------------
 # PAGE CONFIG
@@ -58,6 +59,17 @@ st.title("Velora AI")
 st.caption("Intelligent Text Analysis System")
 
 # -----------------------------
+# CONFIDENCE LABEL
+# -----------------------------
+def confidence_label(score):
+    if score >= 90:
+        return "High"
+    elif score >= 70:
+        return "Moderate"
+    else:
+        return "Low"
+
+# -----------------------------
 # ANALYSIS FUNCTION
 # -----------------------------
 def analyze_text(text):
@@ -70,42 +82,34 @@ def analyze_text(text):
     confidence = float(max(proba) * 100)
     result = "Positive" if prediction == 1 else "Negative"
 
-    # --- Feature importance ---
+    # --- Feature extraction ---
     feature_names = vectorizer.get_feature_names_out()
     weights = vectorized.toarray()[0]
 
-    # Get top features
-    top_indices = weights.argsort()[::-1]
+    # Sort by importance
+    top_indices = np.argsort(weights)[::-1]
 
     keywords = []
-    used_words = set()
+    used_roots = set()
 
     for i in top_indices:
         if weights[i] == 0:
             continue
-        word = feature_names[i]
 
-        # Deduplicate overlapping tokens
-        base_word = word.split()[0]
-        if base_word not in used_words:
+        word = feature_names[i]
+        root = word.split()[0]
+
+        if root not in used_roots:
             keywords.append(word)
-            used_words.add(base_word)
+            used_roots.add(root)
 
         if len(keywords) == 5:
             break
 
-    return result, confidence, keywords
+    # Clean + limit
+    keywords = list(dict.fromkeys(keywords))[:3]
 
-# -----------------------------
-# CONFIDENCE LABEL
-# -----------------------------
-def confidence_label(score):
-    if score >= 90:
-        return "High"
-    elif score >= 70:
-        return "Moderate"
-    else:
-        return "Low"
+    return result, confidence, keywords, proba
 
 # -----------------------------
 # HIGHLIGHT FUNCTION
@@ -123,6 +127,23 @@ def highlight_text(text, keywords, sentiment):
     return text
 
 # -----------------------------
+# UNCERTAINTY CHECK
+# -----------------------------
+def detect_conflict(text, prediction):
+    text = text.lower()
+
+    negative_words = ["bad", "terrible", "worst", "awful"]
+    positive_words = ["good", "great", "excellent", "amazing"]
+
+    if prediction == "Positive" and any(w in text for w in negative_words):
+        return True
+
+    if prediction == "Negative" and any(w in text for w in positive_words):
+        return True
+
+    return False
+
+# -----------------------------
 # SINGLE INPUT UI
 # -----------------------------
 st.subheader("🔍 Analyze Single Text")
@@ -137,7 +158,7 @@ if st.button("Analyze"):
         st.warning("Please enter text")
     else:
         with st.spinner("Analyzing..."):
-            result, confidence, keywords = analyze_text(user_input)
+            result, confidence, keywords, proba = analyze_text(user_input)
 
         # --- Display ---
         st.success(f"Prediction: {result}")
@@ -145,11 +166,15 @@ if st.button("Analyze"):
         st.progress(int(confidence))
         st.write(f"Confidence: ~{int(confidence)}% ({confidence_label(confidence)})")
 
-        # Explanation
+        # --- Conflict detection ---
+        if detect_conflict(user_input, result):
+            st.warning("⚠️ This prediction may be unreliable (conflicting signals detected)")
+
+        # --- Explanation ---
         st.write("Why this prediction:")
         st.info(", ".join(keywords))
 
-        # Highlighted text
+        # --- Highlighted text ---
         highlighted = highlight_text(user_input, keywords, result)
         st.markdown(highlighted, unsafe_allow_html=True)
 
@@ -174,7 +199,7 @@ if uploaded_file:
 
         with st.spinner("Processing file..."):
             for text in df['text']:
-                result, confidence, _ = analyze_text(str(text))
+                result, confidence, _, _ = analyze_text(str(text))
                 results.append(result)
                 confidences.append(round(confidence, 2))
 
