@@ -1,46 +1,22 @@
 # Velora AI
 
-Velora AI is a lightweight intelligent text analysis system built with machine learning and deployed using Streamlit.
+Velora AI is an intelligent sentiment analysis system that classifies product reviews as Positive or Negative using Machine Learning.
 
-## Features
+## 🚀 Features
 
-* Sentiment prediction (Positive / Negative)
-* Confidence score visualization
-* Explanation of predictions (important keywords)
-* Keyword highlighting
-* Batch analysis via CSV upload
-* Downloadable results
+- Analyze single text input
+- Confidence score with interpretation
+- Explanation (important words driving prediction)
+- Highlighted keywords
+- Batch analysis via CSV upload
+- Clean and interactive UI (Streamlit)
 
-## Tech Stack
+## 🧠 Model
 
-* Python
-* Scikit-learn
-* Streamlit
-* Pandas
-* Joblib
+- TF-IDF Vectorization (unigrams + bigrams)
+- Logistic Regression (balanced)
+- Handles phrases like "very bad", "not good"
 
-## How to Run Locally
+## 📂 How to Run Locally
 
-```bash
-pip install -r requirements.txt
-streamlit run app.py
-```
-
-## Project Structure
-
-```
-Velora-AI/
-│── app.py
-│── best_random_model.pkl
-│── vectorizer.pkl
-│── requirements.txt
-│── README.md
-```
-
-## Deployment
-
-This app can be deployed easily using Streamlit Cloud.
-
----
-
-Built as part of a machine learning project.
+1. Clone the repository:

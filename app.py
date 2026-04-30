@@ -1,12 +1,11 @@
 # ---------------------------------------
-# Velora AI - FINAL STABLE VERSION
+# Velora AI — FINAL CLEAN VERSION
 # ---------------------------------------
 
 import streamlit as st
 import joblib
 import re
 import pandas as pd
-import numpy as np
 
 # -----------------------------
 # PAGE CONFIG
@@ -14,7 +13,7 @@ import numpy as np
 st.set_page_config(page_title="Velora AI", layout="wide")
 
 # -----------------------------
-# STYLING
+# PREMIUM UI STYLE
 # -----------------------------
 st.markdown("""
 <style>
@@ -22,7 +21,7 @@ st.markdown("""
     background: linear-gradient(135deg, #0f172a, #1e293b);
     color: white;
 }
-textarea {
+textarea, input {
     background-color: #111827 !important;
     color: white !important;
 }
@@ -35,11 +34,26 @@ textarea {
 """, unsafe_allow_html=True)
 
 # -----------------------------
-# CLEAN FUNCTION
+# TEXT CLEANING
 # -----------------------------
 def clean_text(text):
     text = re.sub(r'[^a-zA-Z]', ' ', text)
     return text.lower()
+
+# -----------------------------
+# RULE-BASED FIX (IMPORTANT)
+# -----------------------------
+NEGATIVE_PHRASES = [
+    "very bad", "worst", "terrible", "awful",
+    "not good", "hate", "poor quality", "bad product"
+]
+
+def rule_override(text, prediction):
+    text_lower = text.lower()
+    for phrase in NEGATIVE_PHRASES:
+        if phrase in text_lower:
+            return 0
+    return prediction
 
 # -----------------------------
 # LOAD MODEL
@@ -53,23 +67,6 @@ def load_model():
 model, vectorizer = load_model()
 
 # -----------------------------
-# TITLE
-# -----------------------------
-st.title("Velora AI")
-st.caption("Intelligent Text Analysis System")
-
-# -----------------------------
-# CONFIDENCE LABEL
-# -----------------------------
-def confidence_label(score):
-    if score >= 90:
-        return "High"
-    elif score >= 70:
-        return "Moderate"
-    else:
-        return "Low"
-
-# -----------------------------
 # ANALYSIS FUNCTION
 # -----------------------------
 def analyze_text(text):
@@ -77,74 +74,48 @@ def analyze_text(text):
     vectorized = vectorizer.transform([cleaned])
 
     prediction = model.predict(vectorized)[0]
-    proba = model.predict_proba(vectorized)[0]
+    prediction = rule_override(text, prediction)
 
-    confidence = float(max(proba) * 100)
+    proba = model.predict_proba(vectorized)[0]
+    confidence = round(max(proba) * 100)
+
+    # cap confidence
+    if confidence > 98:
+        confidence = 98
+
     result = "Positive" if prediction == 1 else "Negative"
 
-    # --- Feature extraction ---
+    # confidence level
+    if confidence >= 90:
+        level = "High"
+    elif confidence >= 70:
+        level = "Moderate"
+    else:
+        level = "Low"
+
+    # important words
     feature_names = vectorizer.get_feature_names_out()
     weights = vectorized.toarray()[0]
 
-    # Sort by importance
-    top_indices = np.argsort(weights)[::-1]
-
-    keywords = []
-    used_roots = set()
-
-    for i in top_indices:
-        if weights[i] == 0:
-            continue
-
-        word = feature_names[i]
-        root = word.split()[0]
-
-        if root not in used_roots:
-            keywords.append(word)
-            used_roots.add(root)
-
-        if len(keywords) == 5:
+    important_words = []
+    for i in weights.argsort()[::-1]:
+        if weights[i] > 0:
+            word = feature_names[i]
+            if word not in important_words:
+                important_words.append(word)
+        if len(important_words) == 5:
             break
 
-    # Clean + limit
-    keywords = list(dict.fromkeys(keywords))[:3]
-
-    return result, confidence, keywords, proba
+    return result, confidence, level, important_words
 
 # -----------------------------
-# HIGHLIGHT FUNCTION
+# UI
 # -----------------------------
-def highlight_text(text, keywords, sentiment):
-    color = "#22c55e" if sentiment == "Positive" else "#ef4444"
-
-    for word in keywords:
-        pattern = re.compile(re.escape(word), re.IGNORECASE)
-        text = pattern.sub(
-            f"<span style='color:{color}; font-weight:bold;'>{word}</span>",
-            text
-        )
-
-    return text
+st.title("Velora AI")
+st.caption("Intelligent Text Analysis System")
 
 # -----------------------------
-# UNCERTAINTY CHECK
-# -----------------------------
-def detect_conflict(text, prediction):
-    text = text.lower()
-
-    negative_words = ["bad", "terrible", "worst", "awful"]
-    positive_words = ["good", "great", "excellent", "amazing"]
-
-    if prediction == "Positive" and any(w in text for w in negative_words):
-        return True
-
-    if prediction == "Negative" and any(w in text for w in positive_words):
-        return True
-
-    return False
-
-# -----------------------------
-# SINGLE INPUT UI
+# SINGLE TEXT
 # -----------------------------
 st.subheader("🔍 Analyze Single Text")
 
@@ -153,33 +124,40 @@ user_input = st.text_area(
     placeholder="Type a review or comment..."
 )
 
-if st.button("Analyze"):
-    if user_input.strip() == "":
-        st.warning("Please enter text")
-    else:
-        with st.spinner("Analyzing..."):
-            result, confidence, keywords, proba = analyze_text(user_input)
+if st.button("Analyze", disabled=(user_input.strip() == "")):
+    with st.spinner("Analyzing..."):
 
-        # --- Display ---
-        st.success(f"Prediction: {result}")
+        result, confidence, level, words = analyze_text(user_input)
 
-        st.progress(int(confidence))
-        st.write(f"Confidence: ~{int(confidence)}% ({confidence_label(confidence)})")
+        if result == "Positive":
+            st.success(f"Prediction: {result}")
+        else:
+            st.error(f"Prediction: {result}")
 
-        # --- Conflict detection ---
-        if detect_conflict(user_input, result):
-            st.warning("⚠️ This prediction may be unreliable (conflicting signals detected)")
+        st.progress(confidence)
+        st.write(f"Confidence: ~{confidence}% ({level})")
 
-        # --- Explanation ---
         st.write("Why this prediction:")
-        st.info(", ".join(keywords))
+        st.info(", ".join(words))
 
-        # --- Highlighted text ---
-        highlighted = highlight_text(user_input, keywords, result)
+        # highlight
+        highlighted = user_input
+        for w in words:
+            if result == "Positive":
+                highlighted = highlighted.replace(
+                    w,
+                    f"<span style='color:#22c55e;font-weight:bold'>{w}</span>"
+                )
+            else:
+                highlighted = highlighted.replace(
+                    w,
+                    f"<span style='color:#ef4444;font-weight:bold'>{w}</span>"
+                )
+
         st.markdown(highlighted, unsafe_allow_html=True)
 
 # -----------------------------
-# CSV BATCH ANALYSIS
+# CSV UPLOAD
 # -----------------------------
 st.subheader("📂 Batch Analysis (CSV Upload)")
 
@@ -192,7 +170,7 @@ if uploaded_file:
     df = pd.read_csv(uploaded_file)
 
     if 'text' not in df.columns:
-        st.error("CSV must contain a column named 'text'")
+        st.error("CSV must contain a 'text' column")
     else:
         results = []
         confidences = []
@@ -201,7 +179,7 @@ if uploaded_file:
             for text in df['text']:
                 result, confidence, _, _ = analyze_text(str(text))
                 results.append(result)
-                confidences.append(round(confidence, 2))
+                confidences.append(confidence)
 
         df['Prediction'] = results
         df['Confidence'] = confidences
@@ -209,4 +187,9 @@ if uploaded_file:
         st.dataframe(df)
 
         csv = df.to_csv(index=False).encode('utf-8')
-        st.download_button("Download Results", csv, "results.csv", "text/csv")
+        st.download_button(
+            "Download Results",
+            csv,
+            "velora_results.csv",
+            "text/csv"
+        )
